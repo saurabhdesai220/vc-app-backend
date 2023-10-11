@@ -1,45 +1,36 @@
-const { Server } = require("socket.io");
-const io = new Server(process.env.PORT || 8000, {
-  cors: true,
+const app = require("express")();
+const server = require("http").createServer(app);
+const cors = require("cors");
+
+const io = require("socket.io")(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
 });
-const emailToSocketIdMap = new Map();
-const socketIdToemailMap = new Map();
+
+app.use(cors());
+
+const PORT = process.env.PORT || 5001;
+
+app.get("/", (req, res) => {
+  res.send("Running");
+});
 
 io.on("connection", (socket) => {
-  console.log("socket connected", socket.id);
+  socket.emit("me", socket.id);
 
-  socket.on("room:join", (data) => {
-    const { email, roomNumber } = data;
-    emailToSocketIdMap.set(email, socket.id);
-    socketIdToemailMap.set(socket.id, email);
-    io.to(roomNumber).emit("user:joined", { email, id: socket.id });
-    socket.join(roomNumber);
-    io.to(socket.id).emit("room:join", data);
+  socket.on("disconnect", () => {
+    socket.broadcast.emit("callEnded");
   });
 
-  socket.on("user:call", (data) => {
-    const { to, offer } = data;
-    io.to(to).emit("incoming:call", { from: socket.id, offer });
+  socket.on("callUser", ({ userToCall, signalData, from, name }) => {
+    io.to(userToCall).emit("callUser", { signal: signalData, from, name });
   });
-  socket.on("call:accepted", (data) => {
-    const { to, ans } = data;
-    io.to(to).emit("call:accepted", { to: socket.id, ans });
-  });
-  socket.on("peer:nego:needed", (data) => {
-    const { to, offer } = data;
-    io.to(to).emit("peer:nego:needed", { from: socket.id, offer });
-  });
-  socket.on("peer:nego:done", (data) => {
-    const { to, ans } = data;
-    io.to(to).emit("peer:nego:final", { from: socket.id, ans });
+
+  socket.on("answerCall", (data) => {
+    io.to(data.to).emit("callAccepted", data.signal);
   });
 });
 
-// var http = require("http");
-
-// http
-//   .createServer(function (req, res) {
-//     res.writeHead(200, { "Content-Type": "text/plain" });
-//     res.end("Hello World!");
-//   })
-//   .listen(process.env.PORT || 8080);
+server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
